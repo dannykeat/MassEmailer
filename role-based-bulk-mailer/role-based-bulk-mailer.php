@@ -74,8 +74,8 @@ class RBM_Role_Based_Bulk_Mailer
     public function register_admin_menu()
     {
         add_users_page(
-            __('Role Mailer', 'rbm'),
-            __('Role Mailer', 'rbm'),
+            __('Email Users', 'rbm'),
+            __('Email Users', 'rbm'),
             'manage_options',
             'rbm-role-mailer',
             [$this, 'render_admin_page']
@@ -90,6 +90,11 @@ class RBM_Role_Based_Bulk_Mailer
 
         $tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : 'compose';
         $roles = wp_roles()->roles;
+        $users = get_users([
+            'fields' => ['ID', 'display_name', 'user_email'],
+            'orderby' => 'display_name',
+            'order' => 'ASC',
+        ]);
         $templates = $this->get_templates();
         ?>
         <div class="wrap">
@@ -109,7 +114,7 @@ class RBM_Role_Based_Bulk_Mailer
             <?php elseif ($tab === 'history') : ?>
                 <?php $this->render_history_tab(); ?>
             <?php else : ?>
-                <?php $this->render_compose_tab($roles, $templates); ?>
+                <?php $this->render_compose_tab($roles, $users, $templates); ?>
             <?php endif; ?>
         </div>
         <?php
@@ -133,7 +138,7 @@ class RBM_Role_Based_Bulk_Mailer
         }
     }
 
-    private function render_compose_tab($roles, $templates)
+    private function render_compose_tab($roles, $users, $templates)
     {
         ?>
         <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
@@ -156,12 +161,23 @@ class RBM_Role_Based_Bulk_Mailer
                 <tr>
                     <th scope="row"><label for="rbm_target_roles"><?php esc_html_e('Target roles', 'rbm'); ?></label></th>
                     <td>
-                        <select id="rbm_target_roles" name="target_roles[]" multiple size="6" required>
+                        <select id="rbm_target_roles" name="target_roles[]" multiple size="6">
                             <?php foreach ($roles as $role_key => $role_data) : ?>
                                 <option value="<?php echo esc_attr($role_key); ?>"><?php echo esc_html($role_data['name']); ?></option>
                             <?php endforeach; ?>
                         </select>
-                        <p class="description"><?php esc_html_e('Use Ctrl/Cmd + Click to choose multiple roles.', 'rbm'); ?></p>
+                        <p class="description"><?php esc_html_e('Use Ctrl/Cmd + Click to choose multiple roles. Optional when specific users are selected below.', 'rbm'); ?></p>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="rbm_target_users"><?php esc_html_e('Specific users', 'rbm'); ?></label></th>
+                    <td>
+                        <select id="rbm_target_users" name="target_users[]" multiple size="8">
+                            <?php foreach ($users as $user) : ?>
+                                <option value="<?php echo esc_attr($user->ID); ?>"><?php echo esc_html(sprintf('%s (%s)', $user->display_name, $user->user_email)); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <p class="description"><?php esc_html_e('Use this to email specific users directly. Combine with roles if needed.', 'rbm'); ?></p>
                     </td>
                 </tr>
                 <tr>
@@ -269,7 +285,7 @@ class RBM_Role_Based_Bulk_Mailer
 
         echo '<table class="widefat striped"><thead><tr>';
         echo '<th>' . esc_html__('Sent At', 'rbm') . '</th>';
-        echo '<th>' . esc_html__('Roles', 'rbm') . '</th>';
+        echo '<th>' . esc_html__('Targets', 'rbm') . '</th>';
         echo '<th>' . esc_html__('Recipients', 'rbm') . '</th>';
         echo '<th>' . esc_html__('Subject', 'rbm') . '</th>';
         echo '<th>' . esc_html__('Status', 'rbm') . '</th>';
@@ -335,18 +351,39 @@ class RBM_Role_Based_Bulk_Mailer
         check_admin_referer('rbm_send_email_action', 'rbm_send_email_nonce');
 
         $roles = isset($_POST['target_roles']) ? array_map('sanitize_text_field', (array) wp_unslash($_POST['target_roles'])) : [];
+        $target_users = isset($_POST['target_users']) ? array_map('absint', (array) wp_unslash($_POST['target_users'])) : [];
+        $target_users = array_filter(array_unique($target_users));
         $subject = isset($_POST['subject']) ? sanitize_text_field(wp_unslash($_POST['subject'])) : '';
         $body = isset($_POST['body']) ? wp_kses_post(wp_unslash($_POST['body'])) : '';
         $template_id = isset($_POST['template_id']) ? absint($_POST['template_id']) : 0;
 
-        if (empty($roles) || $subject === '' || $body === '') {
-            wp_safe_redirect(admin_url('users.php?page=rbm-role-mailer&tab=compose&rbm_error=' . rawurlencode(__('Roles, subject, and body are required.', 'rbm'))));
+        if ((empty($roles) && empty($target_users)) || $subject === '' || $body === '') {
+            wp_safe_redirect(admin_url('users.php?page=rbm-role-mailer&tab=compose&rbm_error=' . rawurlencode(__('Select at least one role or user, and provide subject and body.', 'rbm'))));
             exit;
         }
 
-        $users = get_users([
-            'role__in' => $roles,
-        ]);
+        $users = [];
+
+        if (!empty($roles)) {
+            $users = get_users([
+                'role__in' => $roles,
+            ]);
+        }
+
+        if (!empty($target_users)) {
+            $selected_users = get_users([
+                'include' => $target_users,
+            ]);
+
+            $users = array_merge($users, $selected_users);
+        }
+
+        $users = $this->unique_users_by_id($users);
+
+        if (empty($users)) {
+            wp_safe_redirect(admin_url('users.php?page=rbm-role-mailer&tab=compose&rbm_error=' . rawurlencode(__('No matching users found for the selected targets.', 'rbm'))));
+            exit;
+        }
 
         add_filter('wp_mail_content_type', [$this, 'set_html_mail_content_type']);
 
@@ -363,7 +400,8 @@ class RBM_Role_Based_Bulk_Mailer
 
         remove_filter('wp_mail_content_type', [$this, 'set_html_mail_content_type']);
 
-        $this->log_campaign($roles, $sent_count, $subject, $template_id, $sent_count === count($users) ? 'success' : 'partial');
+        $target_summary = $this->format_target_summary($roles, $target_users);
+        $this->log_campaign($target_summary, $sent_count, $subject, $template_id, $sent_count === count($users) ? 'success' : 'partial');
 
         wp_safe_redirect(admin_url('users.php?page=rbm-role-mailer&tab=compose&rbm_notice=sent&count=' . $sent_count));
         exit;
@@ -407,7 +445,7 @@ class RBM_Role_Based_Bulk_Mailer
         return implode(', ', $role_names);
     }
 
-    private function log_campaign($roles, $count, $subject, $template_id, $status)
+    private function log_campaign($targets, $count, $subject, $template_id, $status)
     {
         global $wpdb;
         $table_name = $wpdb->prefix . self::LOG_TABLE_SUFFIX;
@@ -416,7 +454,7 @@ class RBM_Role_Based_Bulk_Mailer
             $table_name,
             [
                 'sent_at' => current_time('mysql'),
-                'role_targets' => implode(', ', $roles),
+                'role_targets' => $targets,
                 'recipient_count' => $count,
                 'subject' => $subject,
                 'template_id' => $template_id > 0 ? $template_id : null,
@@ -451,6 +489,32 @@ class RBM_Role_Based_Bulk_Mailer
         }
 
         return $payload;
+    }
+
+    private function unique_users_by_id($users)
+    {
+        $unique = [];
+
+        foreach ($users as $user) {
+            $unique[$user->ID] = $user;
+        }
+
+        return array_values($unique);
+    }
+
+    private function format_target_summary($roles, $user_ids)
+    {
+        $parts = [];
+
+        if (!empty($roles)) {
+            $parts[] = sprintf('Roles: %s', implode(', ', $roles));
+        }
+
+        if (!empty($user_ids)) {
+            $parts[] = sprintf('Users: %s', implode(', ', $user_ids));
+        }
+
+        return implode(' | ', $parts);
     }
 }
 
