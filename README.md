@@ -1,0 +1,2 @@
+# MassEmailer
+Email Wordpres subscribers
