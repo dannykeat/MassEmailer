@@ -1,0 +1,1 @@
+- [x] Create a fully featured WordPress plugin to email users by role, including formatting and templates.
