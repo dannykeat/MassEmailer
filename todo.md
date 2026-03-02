@@ -1,0 +1,2 @@
+- [x] Create a fully featured WordPress plugin to email users by role, including formatting and templates.
+- [x] Fix `{role_list}` personalization to use each recipient's actual account roles during multi-role campaigns.
