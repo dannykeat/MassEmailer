@@ -346,15 +346,14 @@ class RBM_Role_Based_Bulk_Mailer
 
         $users = get_users([
             'role__in' => $roles,
-            'fields' => ['ID', 'user_email', 'display_name'],
         ]);
 
         add_filter('wp_mail_content_type', [$this, 'set_html_mail_content_type']);
 
         $sent_count = 0;
         foreach ($users as $user) {
-            $personalized_subject = $this->replace_placeholders($subject, $user, $roles);
-            $personalized_body = $this->replace_placeholders($body, $user, $roles);
+            $personalized_subject = $this->replace_placeholders($subject, $user);
+            $personalized_body = $this->replace_placeholders($body, $user);
             $result = wp_mail($user->user_email, $personalized_subject, wpautop($personalized_body));
 
             if ($result) {
@@ -375,7 +374,7 @@ class RBM_Role_Based_Bulk_Mailer
         return 'text/html';
     }
 
-    private function replace_placeholders($content, $user, $roles)
+    private function replace_placeholders($content, $user)
     {
         $first_name = get_user_meta($user->ID, 'first_name', true);
         $last_name = get_user_meta($user->ID, 'last_name', true);
@@ -385,11 +384,27 @@ class RBM_Role_Based_Bulk_Mailer
             '{user_email}' => $user->user_email,
             '{first_name}' => $first_name ?: $user->display_name,
             '{last_name}' => $last_name ?: '',
-            '{role_list}' => implode(', ', $roles),
+            '{role_list}' => $this->get_user_role_list($user),
             '{site_name}' => get_bloginfo('name'),
         ];
 
         return strtr($content, $map);
+    }
+
+    private function get_user_role_list($user)
+    {
+        if (empty($user->roles) || !is_array($user->roles)) {
+            return '';
+        }
+
+        $all_roles = wp_roles()->roles;
+        $role_names = [];
+
+        foreach ($user->roles as $role_key) {
+            $role_names[] = isset($all_roles[$role_key]['name']) ? $all_roles[$role_key]['name'] : $role_key;
+        }
+
+        return implode(', ', $role_names);
     }
 
     private function log_campaign($roles, $count, $subject, $template_id, $status)
