@@ -90,10 +90,15 @@ class RBM_Role_Based_Bulk_Mailer
 
         $tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : 'compose';
         $roles = wp_roles()->roles;
-        $users = get_users([
-            'orderby' => 'display_name',
-            'order' => 'ASC',
-        ]);
+        $users = [];
+
+        if ($tab === 'compose') {
+            $users = get_users([
+                'orderby' => 'display_name',
+                'order' => 'ASC',
+            ]);
+        }
+
         $templates = $this->get_templates();
         ?>
         <div class="wrap">
@@ -258,9 +263,6 @@ class RBM_Role_Based_Bulk_Mailer
                     Array.from(roleSelect.options).forEach((option) => {
                         const visible = term === '' || option.text.toLowerCase().includes(term);
                         option.hidden = !visible;
-                        if (!visible) {
-                            option.selected = false;
-                        }
                     });
 
                     filterUserOptions();
@@ -279,7 +281,7 @@ class RBM_Role_Based_Bulk_Mailer
                         const visible = roleMatch && textMatch;
 
                         option.hidden = !visible;
-                        if (!visible) {
+                        if (!roleMatch) {
                             option.selected = false;
                         }
                     });

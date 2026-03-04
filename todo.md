@@ -4,3 +4,5 @@
 - [x] Filter specific user options based on selected target roles in the compose form.
 - [x] Add role and user search filters in the compose targeting controls.
 - [x] Add select-all and clear controls for both roles and users in the compose form.
+- [x] Load full user objects only on the Compose tab to avoid unnecessary queries on other admin tabs.
+- [x] Keep explicitly selected users selected when temporarily hidden by user search filtering.
