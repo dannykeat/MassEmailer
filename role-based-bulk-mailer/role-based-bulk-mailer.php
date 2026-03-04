@@ -91,7 +91,6 @@ class RBM_Role_Based_Bulk_Mailer
         $tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : 'compose';
         $roles = wp_roles()->roles;
         $users = get_users([
-            'fields' => ['ID', 'display_name', 'user_email'],
             'orderby' => 'display_name',
             'order' => 'ASC',
         ]);
@@ -161,6 +160,14 @@ class RBM_Role_Based_Bulk_Mailer
                 <tr>
                     <th scope="row"><label for="rbm_target_roles"><?php esc_html_e('Target roles', 'rbm'); ?></label></th>
                     <td>
+                        <p>
+                            <label for="rbm_role_search" class="screen-reader-text"><?php esc_html_e('Search roles', 'rbm'); ?></label>
+                            <input type="search" id="rbm_role_search" class="regular-text" placeholder="<?php esc_attr_e('Search roles…', 'rbm'); ?>" />
+                        </p>
+                        <p>
+                            <button type="button" class="button" id="rbm_select_all_roles"><?php esc_html_e('Select all visible roles', 'rbm'); ?></button>
+                            <button type="button" class="button" id="rbm_clear_roles"><?php esc_html_e('Clear roles', 'rbm'); ?></button>
+                        </p>
                         <select id="rbm_target_roles" name="target_roles[]" multiple size="6">
                             <?php foreach ($roles as $role_key => $role_data) : ?>
                                 <option value="<?php echo esc_attr($role_key); ?>"><?php echo esc_html($role_data['name']); ?></option>
@@ -172,12 +179,20 @@ class RBM_Role_Based_Bulk_Mailer
                 <tr>
                     <th scope="row"><label for="rbm_target_users"><?php esc_html_e('Specific users', 'rbm'); ?></label></th>
                     <td>
+                        <p>
+                            <label for="rbm_user_search" class="screen-reader-text"><?php esc_html_e('Search users', 'rbm'); ?></label>
+                            <input type="search" id="rbm_user_search" class="regular-text" placeholder="<?php esc_attr_e('Search users by name or email…', 'rbm'); ?>" />
+                        </p>
+                        <p>
+                            <button type="button" class="button" id="rbm_select_all_users"><?php esc_html_e('Select all visible users', 'rbm'); ?></button>
+                            <button type="button" class="button" id="rbm_clear_users"><?php esc_html_e('Clear users', 'rbm'); ?></button>
+                        </p>
                         <select id="rbm_target_users" name="target_users[]" multiple size="8">
                             <?php foreach ($users as $user) : ?>
-                                <option value="<?php echo esc_attr($user->ID); ?>"><?php echo esc_html(sprintf('%s (%s)', $user->display_name, $user->user_email)); ?></option>
+                                <option value="<?php echo esc_attr($user->ID); ?>" data-role-keys="<?php echo esc_attr(implode(',', (array) $user->roles)); ?>"><?php echo esc_html(sprintf('%s (%s)', $user->display_name, $user->user_email)); ?></option>
                             <?php endforeach; ?>
                         </select>
-                        <p class="description"><?php esc_html_e('Use this to email specific users directly. Combine with roles if needed.', 'rbm'); ?></p>
+                        <p class="description"><?php esc_html_e('Use this to email specific users directly. Selecting roles above filters this list.', 'rbm'); ?></p>
                     </td>
                 </tr>
                 <tr>
@@ -207,6 +222,14 @@ class RBM_Role_Based_Bulk_Mailer
         <script>
             (function() {
                 const templateSelect = document.getElementById('rbm_template_id');
+                const roleSelect = document.getElementById('rbm_target_roles');
+                const userSelect = document.getElementById('rbm_target_users');
+                const roleSearch = document.getElementById('rbm_role_search');
+                const userSearch = document.getElementById('rbm_user_search');
+                const selectAllRolesButton = document.getElementById('rbm_select_all_roles');
+                const clearRolesButton = document.getElementById('rbm_clear_roles');
+                const selectAllUsersButton = document.getElementById('rbm_select_all_users');
+                const clearUsersButton = document.getElementById('rbm_clear_users');
                 if (!templateSelect) return;
                 const templates = <?php echo wp_json_encode($this->template_payload($templates)); ?>;
 
@@ -222,6 +245,95 @@ class RBM_Role_Based_Bulk_Mailer
                         if (textarea) textarea.value = selected.body || '';
                     }
                 });
+
+                const getSelectedRoleKeys = () => {
+                    if (!roleSelect) return [];
+                    return Array.from(roleSelect.selectedOptions).map((option) => option.value);
+                };
+
+                const filterRoleOptions = () => {
+                    if (!roleSelect || !roleSearch) return;
+
+                    const term = roleSearch.value.trim().toLowerCase();
+                    Array.from(roleSelect.options).forEach((option) => {
+                        const visible = term === '' || option.text.toLowerCase().includes(term);
+                        option.hidden = !visible;
+                        if (!visible) {
+                            option.selected = false;
+                        }
+                    });
+
+                    filterUserOptions();
+                };
+
+                const filterUserOptions = () => {
+                    if (!userSelect) return;
+
+                    const selectedRoles = getSelectedRoleKeys();
+                    const userTerm = userSearch ? userSearch.value.trim().toLowerCase() : '';
+
+                    Array.from(userSelect.options).forEach((option) => {
+                        const userRoles = (option.dataset.roleKeys || '').split(',').filter(Boolean);
+                        const roleMatch = selectedRoles.length === 0 || userRoles.some((role) => selectedRoles.includes(role));
+                        const textMatch = userTerm === '' || option.text.toLowerCase().includes(userTerm);
+                        const visible = roleMatch && textMatch;
+
+                        option.hidden = !visible;
+                        if (!visible) {
+                            option.selected = false;
+                        }
+                    });
+                };
+
+                const selectAllVisible = (selectElement) => {
+                    if (!selectElement) return;
+                    Array.from(selectElement.options).forEach((option) => {
+                        option.selected = !option.hidden;
+                    });
+                    if (selectElement === roleSelect) {
+                        filterUserOptions();
+                    }
+                };
+
+                const clearAllSelected = (selectElement) => {
+                    if (!selectElement) return;
+                    Array.from(selectElement.options).forEach((option) => {
+                        option.selected = false;
+                    });
+                    if (selectElement === roleSelect) {
+                        filterUserOptions();
+                    }
+                };
+
+                if (roleSearch) {
+                    roleSearch.addEventListener('input', filterRoleOptions);
+                }
+
+                if (userSearch) {
+                    userSearch.addEventListener('input', filterUserOptions);
+                }
+
+                if (roleSelect) {
+                    roleSelect.addEventListener('change', filterUserOptions);
+                }
+
+                if (selectAllRolesButton) {
+                    selectAllRolesButton.addEventListener('click', () => selectAllVisible(roleSelect));
+                }
+
+                if (clearRolesButton) {
+                    clearRolesButton.addEventListener('click', () => clearAllSelected(roleSelect));
+                }
+
+                if (selectAllUsersButton) {
+                    selectAllUsersButton.addEventListener('click', () => selectAllVisible(userSelect));
+                }
+
+                if (clearUsersButton) {
+                    clearUsersButton.addEventListener('click', () => clearAllSelected(userSelect));
+                }
+
+                filterUserOptions();
             })();
         </script>
         <?php
