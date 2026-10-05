@@ -534,8 +534,8 @@ class RBM_Role_Based_Bulk_Mailer
 
     public function handle_unsubscribe()
     {
-        $user_id = isset($_GET['user']) ? absint($_GET['user']) : 0;
-        $token = isset($_GET['token']) ? sanitize_text_field(wp_unslash($_GET['token'])) : '';
+        $user_id = isset($_REQUEST['user']) ? absint($_REQUEST['user']) : 0;
+        $token = isset($_REQUEST['token']) ? sanitize_text_field(wp_unslash($_REQUEST['token'])) : '';
 
         if ($user_id <= 0 || $token === '' || !hash_equals($this->unsubscribe_token($user_id), $token)) {
             wp_die(
@@ -552,6 +552,31 @@ class RBM_Role_Based_Bulk_Mailer
                 esc_html__('This unsubscribe link is invalid.', 'rbm'),
                 esc_html__('Unsubscribe', 'rbm'),
                 ['response' => 400]
+            );
+        }
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            if ($this->is_unsubscribed($user_id)) {
+                wp_die(
+                    esc_html__('You are already unsubscribed from these emails.', 'rbm'),
+                    esc_html__('Unsubscribed', 'rbm'),
+                    ['response' => 200]
+                );
+            }
+
+            $form = sprintf(
+                '<p>%1$s</p><form method="post" action="%2$s"><input type="hidden" name="action" value="rbm_unsubscribe"><input type="hidden" name="user" value="%3$d"><input type="hidden" name="token" value="%4$s"><p><button type="submit">%5$s</button></p></form>',
+                esc_html__('Confirm that you no longer want to receive these bulk emails.', 'rbm'),
+                esc_url(admin_url('admin-post.php')),
+                $user_id,
+                esc_attr($token),
+                esc_html__('Unsubscribe', 'rbm')
+            );
+
+            wp_die(
+                $form, // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Each dynamic value is escaped above.
+                esc_html__('Unsubscribe', 'rbm'),
+                ['response' => 200]
             );
         }
 
