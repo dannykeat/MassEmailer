@@ -19,6 +19,7 @@ This repository now contains a production-ready WordPress plugin that allows adm
   - `{role_list}`
   - `{site_name}`
 - Campaign history logging with recipient counts and status.
+- Per-recipient unsubscribe links with automatic suppression from future bulk campaigns.
 
 ## Installation
 
