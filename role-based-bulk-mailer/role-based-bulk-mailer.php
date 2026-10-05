@@ -75,12 +75,14 @@ class RBM_Role_Based_Bulk_Mailer
 
     public function register_admin_menu()
     {
-        add_users_page(
-            __('Email Users', 'rbm'),
-            __('Email Users', 'rbm'),
+        add_menu_page(
+            __('Mass Emailer', 'rbm'),
+            __('Mass Emailer', 'rbm'),
             'manage_options',
             'rbm-role-mailer',
-            [$this, 'render_admin_page']
+            [$this, 'render_admin_page'],
+            'dashicons-email-alt',
+            26
         );
     }
 
@@ -104,7 +106,7 @@ class RBM_Role_Based_Bulk_Mailer
         $templates = $this->get_templates();
         ?>
         <div class="wrap">
-            <h1><?php esc_html_e('Role-Based Bulk Mailer', 'rbm'); ?></h1>
+            <h1><?php esc_html_e('Mass Emailer', 'rbm'); ?></h1>
             <p><?php esc_html_e('Send HTML emails to all users in one or more WordPress roles.', 'rbm'); ?></p>
 
             <h2 class="nav-tab-wrapper">
