@@ -534,8 +534,10 @@ class RBM_Role_Based_Bulk_Mailer
 
     public function handle_unsubscribe()
     {
-        $user_id = isset($_REQUEST['user']) ? absint($_REQUEST['user']) : 0;
-        $token = isset($_REQUEST['token']) ? sanitize_text_field(wp_unslash($_REQUEST['token'])) : '';
+        $is_post = isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'POST';
+        $request = $is_post ? $_POST : $_GET;
+        $user_id = isset($request['user']) ? absint($request['user']) : 0;
+        $token = isset($request['token']) ? sanitize_text_field(wp_unslash($request['token'])) : '';
 
         if ($user_id <= 0 || $token === '' || !hash_equals($this->unsubscribe_token($user_id), $token)) {
             wp_die(
@@ -555,7 +557,7 @@ class RBM_Role_Based_Bulk_Mailer
             );
         }
 
-        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        if (!$is_post) {
             if ($this->is_unsubscribed($user_id)) {
                 wp_die(
                     esc_html__('You are already unsubscribed from these emails.', 'rbm'),
