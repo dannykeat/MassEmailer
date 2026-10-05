@@ -25,7 +25,7 @@ This repository now contains a production-ready WordPress plugin that allows adm
 
 1. Copy `role-based-bulk-mailer` into your WordPress site's `wp-content/plugins/` directory.
 2. Activate **Role-Based Bulk Mailer** in the WordPress admin plugins screen.
-3. Open **Users → Role Mailer**.
+3. Open **Mass Emailer** from the WordPress admin sidebar.
 
 ## Notes
 
