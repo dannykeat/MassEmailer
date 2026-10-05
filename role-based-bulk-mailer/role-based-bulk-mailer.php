@@ -24,6 +24,8 @@ class RBM_Role_Based_Bulk_Mailer
         add_action('admin_menu', [$this, 'register_admin_menu']);
         add_action('admin_init', [$this, 'handle_template_save']);
         add_action('admin_post_rbm_send_email', [$this, 'handle_send_email']);
+        add_action('admin_post_rbm_unsubscribe', [$this, 'handle_unsubscribe']);
+        add_action('admin_post_nopriv_rbm_unsubscribe', [$this, 'handle_unsubscribe']);
     }
 
     public function activate()
@@ -493,9 +495,12 @@ class RBM_Role_Based_Bulk_Mailer
         }
 
         $users = $this->unique_users_by_id($users);
+        $users = array_values(array_filter($users, function ($user) {
+            return !$this->is_unsubscribed($user->ID);
+        }));
 
         if (empty($users)) {
-            wp_safe_redirect(admin_url('users.php?page=rbm-role-mailer&tab=compose&rbm_error=' . rawurlencode(__('No matching users found for the selected targets.', 'rbm'))));
+            wp_safe_redirect(admin_url('users.php?page=rbm-role-mailer&tab=compose&rbm_error=' . rawurlencode(__('No subscribed users found for the selected targets.', 'rbm'))));
             exit;
         }
 
@@ -505,7 +510,8 @@ class RBM_Role_Based_Bulk_Mailer
         foreach ($users as $user) {
             $personalized_subject = $this->replace_placeholders($subject, $user);
             $personalized_body = $this->replace_placeholders($body, $user);
-            $result = wp_mail($user->user_email, $personalized_subject, wpautop($personalized_body));
+            $message = wpautop($personalized_body) . $this->unsubscribe_footer($user);
+            $result = wp_mail($user->user_email, $personalized_subject, $message);
 
             if ($result) {
                 $sent_count++;
@@ -524,6 +530,66 @@ class RBM_Role_Based_Bulk_Mailer
     public function set_html_mail_content_type()
     {
         return 'text/html';
+    }
+
+    public function handle_unsubscribe()
+    {
+        $user_id = isset($_GET['user']) ? absint($_GET['user']) : 0;
+        $token = isset($_GET['token']) ? sanitize_text_field(wp_unslash($_GET['token'])) : '';
+
+        if ($user_id <= 0 || $token === '' || !hash_equals($this->unsubscribe_token($user_id), $token)) {
+            wp_die(
+                esc_html__('This unsubscribe link is invalid.', 'rbm'),
+                esc_html__('Unsubscribe', 'rbm'),
+                ['response' => 400]
+            );
+        }
+
+        $user = get_user_by('id', $user_id);
+
+        if (!$user) {
+            wp_die(
+                esc_html__('This unsubscribe link is invalid.', 'rbm'),
+                esc_html__('Unsubscribe', 'rbm'),
+                ['response' => 400]
+            );
+        }
+
+        update_user_meta($user_id, '_rbm_bulk_mail_unsubscribed', current_time('mysql'));
+
+        wp_die(
+            esc_html__('You have been unsubscribed from these emails.', 'rbm'),
+            esc_html__('Unsubscribed', 'rbm'),
+            ['response' => 200]
+        );
+    }
+
+    private function unsubscribe_footer($user)
+    {
+        $url = add_query_arg(
+            [
+                'action' => 'rbm_unsubscribe',
+                'user' => $user->ID,
+                'token' => $this->unsubscribe_token($user->ID),
+            ],
+            admin_url('admin-post.php')
+        );
+
+        return sprintf(
+            '<p style="margin-top:24px;font-size:12px;color:#666;"><a href="%1$s">%2$s</a></p>',
+            esc_url($url),
+            esc_html__('Unsubscribe from these emails', 'rbm')
+        );
+    }
+
+    private function unsubscribe_token($user_id)
+    {
+        return hash_hmac('sha256', (string) $user_id, wp_salt('auth'));
+    }
+
+    private function is_unsubscribed($user_id)
+    {
+        return (bool) get_user_meta($user_id, '_rbm_bulk_mail_unsubscribed', true);
     }
 
     private function replace_placeholders($content, $user)
