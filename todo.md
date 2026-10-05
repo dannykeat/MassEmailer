@@ -6,3 +6,4 @@
 - [x] Add select-all and clear controls for both roles and users in the compose form.
 - [x] Load full user objects only on the Compose tab to avoid unnecessary queries on other admin tabs.
 - [x] Keep explicitly selected users selected when temporarily hidden by user search filtering.
+- [x] Add signed per-recipient unsubscribe links and suppress opted-out users from future bulk campaigns.

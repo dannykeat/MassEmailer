@@ -24,6 +24,9 @@ class RBM_Role_Based_Bulk_Mailer
         add_action('admin_menu', [$this, 'register_admin_menu']);
         add_action('admin_init', [$this, 'handle_template_save']);
         add_action('admin_post_rbm_send_email', [$this, 'handle_send_email']);
+        add_action('admin_post_rbm_unsubscribe', [$this, 'handle_unsubscribe']);
+        add_action('admin_post_nopriv_rbm_unsubscribe', [$this, 'handle_unsubscribe']);
+        add_action('admin_post_rbm_resubscribe', [$this, 'handle_resubscribe']);
     }
 
     public function activate()
@@ -73,12 +76,14 @@ class RBM_Role_Based_Bulk_Mailer
 
     public function register_admin_menu()
     {
-        add_users_page(
-            __('Email Users', 'rbm'),
-            __('Email Users', 'rbm'),
+        add_menu_page(
+            __('Mass Emailer', 'rbm'),
+            __('Mass Emailer', 'rbm'),
             'manage_options',
             'rbm-role-mailer',
-            [$this, 'render_admin_page']
+            [$this, 'render_admin_page'],
+            'dashicons-email-alt',
+            26
         );
     }
 
@@ -102,13 +107,14 @@ class RBM_Role_Based_Bulk_Mailer
         $templates = $this->get_templates();
         ?>
         <div class="wrap">
-            <h1><?php esc_html_e('Role-Based Bulk Mailer', 'rbm'); ?></h1>
+            <h1><?php esc_html_e('Mass Emailer', 'rbm'); ?></h1>
             <p><?php esc_html_e('Send HTML emails to all users in one or more WordPress roles.', 'rbm'); ?></p>
 
             <h2 class="nav-tab-wrapper">
-                <a href="<?php echo esc_url(admin_url('users.php?page=rbm-role-mailer&tab=compose')); ?>" class="nav-tab <?php echo $tab === 'compose' ? 'nav-tab-active' : ''; ?>"><?php esc_html_e('Compose', 'rbm'); ?></a>
-                <a href="<?php echo esc_url(admin_url('users.php?page=rbm-role-mailer&tab=templates')); ?>" class="nav-tab <?php echo $tab === 'templates' ? 'nav-tab-active' : ''; ?>"><?php esc_html_e('Templates', 'rbm'); ?></a>
-                <a href="<?php echo esc_url(admin_url('users.php?page=rbm-role-mailer&tab=history')); ?>" class="nav-tab <?php echo $tab === 'history' ? 'nav-tab-active' : ''; ?>"><?php esc_html_e('History', 'rbm'); ?></a>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=rbm-role-mailer&tab=compose')); ?>" class="nav-tab <?php echo $tab === 'compose' ? 'nav-tab-active' : ''; ?>"><?php esc_html_e('Compose', 'rbm'); ?></a>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=rbm-role-mailer&tab=templates')); ?>" class="nav-tab <?php echo $tab === 'templates' ? 'nav-tab-active' : ''; ?>"><?php esc_html_e('Templates', 'rbm'); ?></a>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=rbm-role-mailer&tab=history')); ?>" class="nav-tab <?php echo $tab === 'history' ? 'nav-tab-active' : ''; ?>"><?php esc_html_e('History', 'rbm'); ?></a>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=rbm-role-mailer&tab=unsubscribed')); ?>" class="nav-tab <?php echo $tab === 'unsubscribed' ? 'nav-tab-active' : ''; ?>"><?php esc_html_e('Unsubscribed', 'rbm'); ?></a>
             </h2>
 
             <?php $this->render_admin_notices(); ?>
@@ -117,6 +123,8 @@ class RBM_Role_Based_Bulk_Mailer
                 <?php $this->render_templates_tab($templates); ?>
             <?php elseif ($tab === 'history') : ?>
                 <?php $this->render_history_tab(); ?>
+            <?php elseif ($tab === 'unsubscribed') : ?>
+                <?php $this->render_unsubscribed_tab(); ?>
             <?php else : ?>
                 <?php $this->render_compose_tab($roles, $users, $templates); ?>
             <?php endif; ?>
@@ -135,6 +143,10 @@ class RBM_Role_Based_Bulk_Mailer
 
         if (isset($_GET['rbm_notice']) && $_GET['rbm_notice'] === 'template_saved') {
             echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__('Template saved.', 'rbm') . '</p></div>';
+        }
+
+        if (isset($_GET['rbm_notice']) && $_GET['rbm_notice'] === 'resubscribed') {
+            echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__('User resubscribed to bulk emails.', 'rbm') . '</p></div>';
         }
 
         if (isset($_GET['rbm_error'])) {
@@ -345,7 +357,7 @@ class RBM_Role_Based_Bulk_Mailer
     {
         ?>
         <h2><?php esc_html_e('Save a Template', 'rbm'); ?></h2>
-        <form method="post" action="<?php echo esc_url(admin_url('users.php?page=rbm-role-mailer&tab=templates')); ?>">
+        <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=rbm-role-mailer&tab=templates')); ?>">
             <?php wp_nonce_field('rbm_save_template_action', 'rbm_save_template_nonce'); ?>
             <table class="form-table" role="presentation">
                 <tr>
@@ -418,6 +430,66 @@ class RBM_Role_Based_Bulk_Mailer
         echo '</tbody></table>';
     }
 
+    private function render_unsubscribed_tab()
+    {
+        $users = get_users([
+            'meta_key' => '_rbm_bulk_mail_unsubscribed',
+            'meta_compare' => 'EXISTS',
+            'orderby' => 'display_name',
+            'order' => 'ASC',
+        ]);
+
+        echo '<h2>' . esc_html__('Unsubscribed Users', 'rbm') . '</h2>';
+
+        if (empty($users)) {
+            echo '<p>' . esc_html__('No users have unsubscribed from bulk emails.', 'rbm') . '</p>';
+            return;
+        }
+
+        echo '<table class="widefat striped"><thead><tr>';
+        echo '<th>' . esc_html__('Name', 'rbm') . '</th>';
+        echo '<th>' . esc_html__('Email', 'rbm') . '</th>';
+        echo '<th>' . esc_html__('Unsubscribed At', 'rbm') . '</th>';
+        echo '<th>' . esc_html__('Action', 'rbm') . '</th>';
+        echo '</tr></thead><tbody>';
+
+        foreach ($users as $user) {
+            $resubscribe_url = wp_nonce_url(
+                admin_url('admin-post.php?action=rbm_resubscribe&user=' . $user->ID),
+                'rbm_resubscribe_' . $user->ID
+            );
+
+            echo '<tr>';
+            echo '<td>' . esc_html($user->display_name) . '</td>';
+            echo '<td>' . esc_html($user->user_email) . '</td>';
+            echo '<td>' . esc_html((string) get_user_meta($user->ID, '_rbm_bulk_mail_unsubscribed', true)) . '</td>';
+            echo '<td><a class="button" href="' . esc_url($resubscribe_url) . '">' . esc_html__('Resubscribe', 'rbm') . '</a></td>';
+            echo '</tr>';
+        }
+
+        echo '</tbody></table>';
+    }
+
+    public function handle_resubscribe()
+    {
+        if (!current_user_can('manage_options')) {
+            wp_die(__('Unauthorized request.', 'rbm'));
+        }
+
+        $user_id = isset($_GET['user']) ? absint($_GET['user']) : 0;
+
+        if ($user_id <= 0) {
+            wp_die(__('Invalid user.', 'rbm'));
+        }
+
+        check_admin_referer('rbm_resubscribe_' . $user_id);
+
+        delete_user_meta($user_id, '_rbm_bulk_mail_unsubscribed');
+
+        wp_safe_redirect(admin_url('admin.php?page=rbm-role-mailer&tab=unsubscribed&rbm_notice=resubscribed'));
+        exit;
+    }
+
     public function handle_template_save()
     {
         if (!isset($_POST['rbm_save_template_nonce'])) {
@@ -435,7 +507,7 @@ class RBM_Role_Based_Bulk_Mailer
         $body = isset($_POST['template_body']) ? wp_kses_post(wp_unslash($_POST['template_body'])) : '';
 
         if ($name === '' || $subject === '' || $body === '') {
-            wp_safe_redirect(admin_url('users.php?page=rbm-role-mailer&tab=templates&rbm_error=' . rawurlencode(__('Template fields are required.', 'rbm'))));
+            wp_safe_redirect(admin_url('admin.php?page=rbm-role-mailer&tab=templates&rbm_error=' . rawurlencode(__('Template fields are required.', 'rbm'))));
             exit;
         }
 
@@ -448,11 +520,11 @@ class RBM_Role_Based_Bulk_Mailer
 
         if (!is_wp_error($template_id)) {
             update_post_meta($template_id, '_rbm_template_subject', $subject);
-            wp_safe_redirect(admin_url('users.php?page=rbm-role-mailer&tab=templates&rbm_notice=template_saved'));
+            wp_safe_redirect(admin_url('admin.php?page=rbm-role-mailer&tab=templates&rbm_notice=template_saved'));
             exit;
         }
 
-        wp_safe_redirect(admin_url('users.php?page=rbm-role-mailer&tab=templates&rbm_error=' . rawurlencode(__('Could not save template.', 'rbm'))));
+        wp_safe_redirect(admin_url('admin.php?page=rbm-role-mailer&tab=templates&rbm_error=' . rawurlencode(__('Could not save template.', 'rbm'))));
         exit;
     }
 
@@ -472,7 +544,7 @@ class RBM_Role_Based_Bulk_Mailer
         $template_id = isset($_POST['template_id']) ? absint($_POST['template_id']) : 0;
 
         if ((empty($roles) && empty($target_users)) || $subject === '' || $body === '') {
-            wp_safe_redirect(admin_url('users.php?page=rbm-role-mailer&tab=compose&rbm_error=' . rawurlencode(__('Select at least one role or user, and provide subject and body.', 'rbm'))));
+            wp_safe_redirect(admin_url('admin.php?page=rbm-role-mailer&tab=compose&rbm_error=' . rawurlencode(__('Select at least one role or user, and provide subject and body.', 'rbm'))));
             exit;
         }
 
@@ -493,9 +565,12 @@ class RBM_Role_Based_Bulk_Mailer
         }
 
         $users = $this->unique_users_by_id($users);
+        $users = array_values(array_filter($users, function ($user) {
+            return !$this->is_unsubscribed($user->ID);
+        }));
 
         if (empty($users)) {
-            wp_safe_redirect(admin_url('users.php?page=rbm-role-mailer&tab=compose&rbm_error=' . rawurlencode(__('No matching users found for the selected targets.', 'rbm'))));
+            wp_safe_redirect(admin_url('admin.php?page=rbm-role-mailer&tab=compose&rbm_error=' . rawurlencode(__('No subscribed users found for the selected targets.', 'rbm'))));
             exit;
         }
 
@@ -505,7 +580,8 @@ class RBM_Role_Based_Bulk_Mailer
         foreach ($users as $user) {
             $personalized_subject = $this->replace_placeholders($subject, $user);
             $personalized_body = $this->replace_placeholders($body, $user);
-            $result = wp_mail($user->user_email, $personalized_subject, wpautop($personalized_body));
+            $message = wpautop($personalized_body) . $this->unsubscribe_footer($user);
+            $result = wp_mail($user->user_email, $personalized_subject, $message);
 
             if ($result) {
                 $sent_count++;
@@ -517,13 +593,100 @@ class RBM_Role_Based_Bulk_Mailer
         $target_summary = $this->format_target_summary($roles, $target_users);
         $this->log_campaign($target_summary, $sent_count, $subject, $template_id, $sent_count === count($users) ? 'success' : 'partial');
 
-        wp_safe_redirect(admin_url('users.php?page=rbm-role-mailer&tab=compose&rbm_notice=sent&count=' . $sent_count));
+        wp_safe_redirect(admin_url('admin.php?page=rbm-role-mailer&tab=compose&rbm_notice=sent&count=' . $sent_count));
         exit;
     }
 
     public function set_html_mail_content_type()
     {
         return 'text/html';
+    }
+
+    public function handle_unsubscribe()
+    {
+        $is_post = isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'POST';
+        $request = $is_post ? $_POST : $_GET;
+        $user_id = isset($request['user']) ? absint($request['user']) : 0;
+        $token = isset($request['token']) ? sanitize_text_field(wp_unslash($request['token'])) : '';
+
+        if ($user_id <= 0 || $token === '' || !hash_equals($this->unsubscribe_token($user_id), $token)) {
+            wp_die(
+                esc_html__('This unsubscribe link is invalid.', 'rbm'),
+                esc_html__('Unsubscribe', 'rbm'),
+                ['response' => 400]
+            );
+        }
+
+        $user = get_user_by('id', $user_id);
+
+        if (!$user) {
+            wp_die(
+                esc_html__('This unsubscribe link is invalid.', 'rbm'),
+                esc_html__('Unsubscribe', 'rbm'),
+                ['response' => 400]
+            );
+        }
+
+        if (!$is_post) {
+            if ($this->is_unsubscribed($user_id)) {
+                wp_die(
+                    esc_html__('You are already unsubscribed from these emails.', 'rbm'),
+                    esc_html__('Unsubscribed', 'rbm'),
+                    ['response' => 200]
+                );
+            }
+
+            $form = sprintf(
+                '<p>%1$s</p><form method="post" action="%2$s"><input type="hidden" name="action" value="rbm_unsubscribe"><input type="hidden" name="user" value="%3$d"><input type="hidden" name="token" value="%4$s"><p><button type="submit">%5$s</button></p></form>',
+                esc_html__('Confirm that you no longer want to receive these bulk emails.', 'rbm'),
+                esc_url(admin_url('admin-post.php')),
+                $user_id,
+                esc_attr($token),
+                esc_html__('Unsubscribe', 'rbm')
+            );
+
+            wp_die(
+                $form, // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Each dynamic value is escaped above.
+                esc_html__('Unsubscribe', 'rbm'),
+                ['response' => 200]
+            );
+        }
+
+        update_user_meta($user_id, '_rbm_bulk_mail_unsubscribed', current_time('mysql'));
+
+        wp_die(
+            esc_html__('You have been unsubscribed from these emails.', 'rbm'),
+            esc_html__('Unsubscribed', 'rbm'),
+            ['response' => 200]
+        );
+    }
+
+    private function unsubscribe_footer($user)
+    {
+        $url = add_query_arg(
+            [
+                'action' => 'rbm_unsubscribe',
+                'user' => $user->ID,
+                'token' => $this->unsubscribe_token($user->ID),
+            ],
+            admin_url('admin-post.php')
+        );
+
+        return sprintf(
+            '<p style="margin-top:24px;font-size:12px;color:#666;"><a href="%1$s">%2$s</a></p>',
+            esc_url($url),
+            esc_html__('Unsubscribe from these emails', 'rbm')
+        );
+    }
+
+    private function unsubscribe_token($user_id)
+    {
+        return hash_hmac('sha256', (string) $user_id, wp_salt('auth'));
+    }
+
+    private function is_unsubscribed($user_id)
+    {
+        return (bool) get_user_meta($user_id, '_rbm_bulk_mail_unsubscribed', true);
     }
 
     private function replace_placeholders($content, $user)
